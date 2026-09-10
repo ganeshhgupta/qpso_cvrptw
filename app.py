@@ -7,12 +7,11 @@ import streamlit as st
 import matplotlib.pyplot as plt
 
 from core.baselines import gap_percent
-from core.engine import solve_exact, solve_qpso, solve_random
+from core.engine import solve_exact, solve_qpso, solve_random, solve_ga_baseline
 from core.graph_model import load_osm_network
 from core.traffic import apply_traffic_scenario
 from core.vrp import Customer, VRPInstance
 
-# UI logic modules
 from core.heuristics import solve_dynamic_heuristic
 from core.visualization import plot_map_view, plot_graph_view
 
@@ -43,7 +42,7 @@ st.markdown(
     """
     <div class="hero">
         <h1>Quantum-Inspired Urban Routing Framework</h1>
-        <p>Dynamic modeling for large-scale CVRP (with varying demands) and Shortest-Path optimization.</p>
+        <p>Dynamic modeling and optimization for large-scale Capacitated Vehicle Routing Problems (CVRPTW).</p>
     </div>
     """,
     unsafe_allow_html=True,
@@ -79,20 +78,12 @@ def choose_stops(G, n, seed=42, manual_depot=None, manual_customers=None):
 # Sidebar Configuration
 # -----------------------------------------------------------------------------
 with st.sidebar:
-    st.header("Routing Problem Type")
-    mode = st.radio("Select Problem Model:", ["Fleet VRP (Capacity, Round-trip)", "Shortest Path (Point-to-Point)"])
-    is_sp = "Shortest Path" in mode
-
     st.header("Graph Environment")
     place = st.text_input("OSM Location", "Manhattan, New York, USA")
-    customers_n = st.slider("Number of Destinations", 1 if is_sp else 4, 30, 2 if is_sp else 10)
-    
-    if not is_sp:
-        vehicles = st.slider("Fleet Vehicles", 1, 10, 3)
-        capacity = st.number_input("Vehicle Capacity (Total Units)", min_value=1.0, value=25.0, step=1.0)
-        time_windows = st.checkbox("Enforce Time-Window Constraints (VRPTW)", value=True)
-    else:
-        vehicles, capacity, time_windows = 1, 9999, False
+    customers_n = st.slider("Number of Destinations", 4, 30, 10)
+    vehicles = st.slider("Fleet Vehicles", 1, 10, 3)
+    capacity = st.number_input("Vehicle Capacity (Total Units)", min_value=1.0, value=25.0, step=1.0)
+    time_windows = st.checkbox("Enforce Time-Window Constraints (VRPTW)", value=True)
 
     with st.expander("🛠 Advanced: Manual Node Mapping"):
         st.caption("Leave blank to randomly generate based on seed.")
@@ -104,13 +95,13 @@ with st.sidebar:
     
     st.header("Algorithm Selection")
     run_qpso = st.checkbox("QPSO (Quantum-Inspired)", value=True)
-    run_astar = st.checkbox("A* Heuristic", value=True)
-    run_dijkstra = st.checkbox("Dijkstra Heuristic", value=True)
-    run_nn = st.checkbox("Nearest Neighbor", value=not is_sp)
+    run_ga = st.checkbox("Genetic Algorithm (GA)", value=True)
+    run_astar = st.checkbox("A* Constructive Heuristic", value=True)
+    run_dijkstra = st.checkbox("Dijkstra Constructive Heuristic", value=True)
     run_exact = st.checkbox("Exact Enumeration (≤ 9)", value=(customers_n <= 9))
 
-    st.header("QPSO Hyperparameters")
-    particles = st.slider("Swarm Particles", 10, 100, 40)
+    st.header("Metaheuristic Hyperparameters")
+    particles = st.slider("Swarm/Population Size", 10, 100, 40)
     iterations = st.slider("Max Iterations", 20, 500, 100)
 
     run_btn = st.button("Execute Routing Experiment", type="primary", use_container_width=True)
@@ -122,9 +113,9 @@ if 'results' not in st.session_state and not run_btn:
     st.markdown("### Experiment Initialized")
     sc1, sc2, sc3, sc4 = st.columns(4)
     with sc1: st.markdown(f'<div class="metric-card"><div class="metric-label">Target Network</div><div class="metric-value">{place}</div></div>', unsafe_allow_html=True)
-    with sc2: st.markdown(f'<div class="metric-card"><div class="metric-label">Mode Selected</div><div class="metric-value">{mode}</div></div>', unsafe_allow_html=True)
+    with sc2: st.markdown(f'<div class="metric-card"><div class="metric-label">Fleet Size</div><div class="metric-value">{vehicles}</div></div>', unsafe_allow_html=True)
     with sc3: st.markdown(f'<div class="metric-card"><div class="metric-label">Time-Windows</div><div class="metric-value">{"Active" if time_windows else "Inactive"}</div></div>', unsafe_allow_html=True)
-    with sc4: st.markdown(f'<div class="metric-card"><div class="metric-label">QPSO Evaluations</div><div class="metric-value">{particles * iterations}</div></div>', unsafe_allow_html=True)
+    with sc4: st.markdown(f'<div class="metric-card"><div class="metric-label">Metaheuristic Evals</div><div class="metric-value">{particles * iterations}</div></div>', unsafe_allow_html=True)
     st.info("👈 **Configure parameters in the sidebar and click 'Execute Routing Experiment'.**")
     st.stop()
 
@@ -148,23 +139,22 @@ if run_btn:
             depot, customer_nodes = choose_stops(G, customers_n, seed=int(traffic_seed), manual_depot=manual_depot, manual_customers=manual_customers)
 
         rng = np.random.default_rng(int(traffic_seed))
-        demands = rng.integers(1, 8, size=len(customer_nodes)) if not is_sp else np.ones(len(customer_nodes))
+        demands = rng.integers(1, 8, size=len(customer_nodes))
         customers_obj = [Customer(node=n, demand=float(d)) for n, d in zip(customer_nodes, demands)]
         instance = VRPInstance(depot=depot, customers=customers_obj, vehicle_capacity=float(capacity), num_vehicles=int(vehicles))
 
         if run_qpso:
             with st.spinner("Computing QPSO Global Topology..."):
                 results['QPSO'] = solve_qpso(G, instance, particles=particles, iterations=iterations, seed=int(traffic_seed), distance_weight=objective_distance)
-        if run_nn and not is_sp:
-            with st.spinner("Computing Nearest Neighbor Baseline..."):
-                results['NN'] = solve_dynamic_heuristic(G, instance, method='dijkstra', distance_weight=objective_distance, is_shortest_path_mode=is_sp)
-                results['NN']['algorithm'] = "Nearest Neighbor"
+        if run_ga:
+            with st.spinner("Computing GA Evolution..."):
+                results['GA'] = solve_ga_baseline(G, instance, particles=particles, iterations=iterations, seed=int(traffic_seed), distance_weight=objective_distance)
         if run_astar:
             with st.spinner("Computing A* Heuristic Baseline..."):
-                results['A*'] = solve_dynamic_heuristic(G, instance, method='astar', distance_weight=objective_distance, is_shortest_path_mode=is_sp)
+                results['A*'] = solve_dynamic_heuristic(G, instance, method='astar', distance_weight=objective_distance)
         if run_dijkstra:
             with st.spinner("Computing Dijkstra Baseline..."):
-                results['Dijkstra'] = solve_dynamic_heuristic(G, instance, method='dijkstra', distance_weight=objective_distance, is_shortest_path_mode=is_sp)
+                results['Dijkstra'] = solve_dynamic_heuristic(G, instance, method='dijkstra', distance_weight=objective_distance)
         if run_exact:
             with st.spinner("Solving Exact Exhaustive..."):
                 results['Exact'] = solve_exact(G, instance, max_customers=9, distance_weight=objective_distance)
@@ -174,7 +164,7 @@ if run_btn:
         with st.expander("🔍 View Detailed Error Traceback"): st.code(traceback.format_exc(), language="python")
         st.stop()
 
-    st.session_state.update({'results': results, 'G': G, 'instance': instance, 'elapsed': time.perf_counter() - start_total, 'is_sp': is_sp})
+    st.session_state.update({'results': results, 'G': G, 'instance': instance, 'elapsed': time.perf_counter() - start_total})
 
 # -----------------------------------------------------------------------------
 # Results Dashboard
@@ -183,7 +173,6 @@ results = st.session_state['results']
 G = st.session_state['G']
 instance = st.session_state['instance']
 elapsed = st.session_state['elapsed']
-is_sp = st.session_state['is_sp']
 
 st.markdown('<div class="section-title" style="margin-top:0;">Visualize Algorithm Output</div>', unsafe_allow_html=True)
 
@@ -195,14 +184,14 @@ primary_res = results[selected_algo]
 
 c1, c2, c3, c4 = st.columns(4)
 with c1: st.markdown(f'<div class="metric-card"><div class="metric-label">{primary_res["algorithm"]} Score</div><div class="metric-value">{primary_res["score"]:.2f}</div></div>', unsafe_allow_html=True)
-with c2: st.markdown(f'<div class="metric-card"><div class="metric-label">{"Paths Computed" if is_sp else "Vehicles Utilized"}</div><div class="metric-value">{len([r for r in primary_res["routes"] if len(r)>2])} / {st.session_state.get("vehicles", vehicles)}</div></div>', unsafe_allow_html=True)
+with c2: st.markdown(f'<div class="metric-card"><div class="metric-label">Vehicles Utilized</div><div class="metric-value">{len([r for r in primary_res["routes"] if len(r)>2])} / {st.session_state.get("vehicles", vehicles)}</div></div>', unsafe_allow_html=True)
 with c3: st.markdown(f'<div class="metric-card"><div class="metric-label">Total Traversed Dist.</div><div class="metric-value">{primary_res["distance_m"]/1000:.2f} km</div></div>', unsafe_allow_html=True)
 with c4: st.markdown(f'<div class="metric-card"><div class="metric-label">Total Execution Time</div><div class="metric-value">{elapsed:.2f} s</div></div>', unsafe_allow_html=True)
 
 if "Map View" in view_mode:
-    fig = plot_map_view(G, primary_res, instance, is_shortest_path=is_sp)
+    fig = plot_map_view(G, primary_res, instance)
 else:
-    fig = plot_graph_view(G, primary_res, instance, is_shortest_path=is_sp)
+    fig = plot_graph_view(G, primary_res, instance)
     
 st.pyplot(fig, use_container_width=True)
 plt.close(fig)
@@ -221,11 +210,11 @@ with col_a:
 with col_b:
     st.markdown('<div class="section-title">Optimization Convergence</div>', unsafe_allow_html=True)
     fig_conv, ax = plt.subplots(figsize=(8, 3.8))
-    colors = {'QPSO': '#D90429', 'Random': '#F4A261', 'NN': '#2A9D8F', 'A*': '#0077B6', 'Dijkstra': '#7209B7', 'Exact': '#111827'}
+    colors = {'QPSO': '#D90429', 'Genetic Algorithm': '#F4A261', 'A* Constructive': '#0077B6', 'Dijkstra Constructive': '#7209B7', 'Exact Enumeration': '#111827'}
     
     for key, res in results.items():
-        color = colors.get(key, '#888888')
-        if 'history' in res and key in ['QPSO', 'Random']:
+        color = colors.get(res['algorithm'], '#888888')
+        if 'history' in res and res['algorithm'] in ['QPSO', 'Genetic Algorithm', 'Random Search']:
             ax.plot(res["history"], color=color, linewidth=2.5, label=res['algorithm'])
         else:
             ax.axhline(y=res["score"], color=color, linestyle='--', linewidth=1.8, label=res['algorithm'])

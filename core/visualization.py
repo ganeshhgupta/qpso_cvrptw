@@ -15,7 +15,7 @@ def edge_geometry(G, u, v):
     if geometry is not None: return np.asarray(geometry.coords)
     return np.asarray([[G.nodes[u]["x"], G.nodes[u]["y"]], [G.nodes[v]["x"], G.nodes[v]["y"]]])
 
-def plot_map_view(G, result, instance, is_shortest_path=False):
+def plot_map_view(G, result, instance):
     fig, ax = ox.plot_graph(
         G, show=False, close=False, node_size=0,
         edge_color="#eef0f2", edge_linewidth=0.35, bgcolor="white", figsize=(10, 5)
@@ -43,17 +43,14 @@ def plot_map_view(G, result, instance, is_shortest_path=False):
         if vehicle_segments:
             lc = LineCollection(vehicle_segments, colors=[color], linewidths=1.2, alpha=0.9, zorder=4, capstyle="round")
             ax.add_collection(lc)
-            label = "Path Trajectory" if is_shortest_path else f"Vehicle {vehicle_idx + 1}"
-            legend_handles.append(Line2D([0], [0], color=color, lw=2, label=label))
+            legend_handles.append(Line2D([0], [0], color=color, lw=2, label=f"Vehicle {vehicle_idx + 1}"))
 
     c_x = [G.nodes[n]["x"] for n in customer_nodes if n in G.nodes]
     c_y = [G.nodes[n]["y"] for n in customer_nodes if n in G.nodes]
-    cust_label = "Destination(s)" if is_shortest_path else "Customer"
     ax.scatter(c_x, c_y, s=40, marker="o", facecolor="white", edgecolor="#111827", linewidth=1.0, zorder=7)
 
     if depot in G.nodes:
         dx, dy = G.nodes[depot]["x"], G.nodes[depot]["y"]
-        depot_label = "Origin Node" if is_shortest_path else "Depot Base"
         ax.scatter([dx], [dy], s=180, marker="*", facecolor="#D90429", edgecolor="white", linewidth=1.0, zorder=8)
 
     all_x = [data['x'] for n, data in G.nodes(data=True)]
@@ -64,15 +61,15 @@ def plot_map_view(G, result, instance, is_shortest_path=False):
         ax.set_ylim(min(all_y) - pad_y, max(all_y) + pad_y)
 
     legend_handles.extend([
-        Line2D([0], [0], marker="*", color="none", markerfacecolor="#D90429", markeredgecolor="white", markersize=12, label=depot_label),
-        Line2D([0], [0], marker="o", color="none", markerfacecolor="white", markeredgecolor="#111827", markersize=6, label=cust_label),
+        Line2D([0], [0], marker="*", color="none", markerfacecolor="#D90429", markeredgecolor="white", markersize=12, label="Depot Base"),
+        Line2D([0], [0], marker="o", color="none", markerfacecolor="white", markeredgecolor="#111827", markersize=6, label="Customer Node"),
     ])
 
     ax.legend(handles=legend_handles, loc="best", frameon=True, framealpha=0.9, edgecolor="#e5e7eb", fontsize=9, ncol=min(4, len(legend_handles)))
     fig.tight_layout(pad=0)
     return fig
 
-def plot_graph_view(G, result, instance, is_shortest_path=False):
+def plot_graph_view(G, result, instance):
     fig, ax = plt.subplots(figsize=(10, 5))
     ax.set_facecolor("white")
     ax.axis("off")
@@ -93,19 +90,16 @@ def plot_graph_view(G, result, instance, is_shortest_path=False):
             ax.plot(xs, ys, color=color, linewidth=2.0, alpha=0.85, zorder=4, linestyle="--")
             for i in range(len(xs)-1):
                 ax.annotate("", xy=(xs[i+1], ys[i+1]), xytext=(xs[i], ys[i]), arrowprops=dict(arrowstyle="->", color=color, lw=1.5, alpha=0.7))
-            label = "Path Topology" if is_shortest_path else f"Vehicle {vehicle_idx + 1}"
-            legend_handles.append(Line2D([0], [0], color=color, lw=2, linestyle="--", label=label))
+            legend_handles.append(Line2D([0], [0], color=color, lw=2, linestyle="--", label=f"Vehicle {vehicle_idx + 1}"))
 
     for c in instance.customers:
         if c.node in G.nodes:
             x, y = G.nodes[c.node]['x'], G.nodes[c.node]['y']
             ax.scatter(x, y, s=350, marker="o", facecolor="white", edgecolor="#111827", linewidth=2.0, zorder=7)
-            if not is_shortest_path:
-                ax.text(x, y, str(int(c.demand)), fontsize=9, ha='center', va='center', fontweight='bold', color="#111827", zorder=8)
+            ax.text(x, y, str(int(c.demand)), fontsize=9, ha='center', va='center', fontweight='bold', color="#111827", zorder=8)
 
     if depot in G.nodes:
         dx, dy = G.nodes[depot]["x"], G.nodes[depot]["y"]
-        depot_label = "Origin Node" if is_shortest_path else "Depot Node"
         ax.scatter([dx], [dy], s=500, marker="*", facecolor="#D90429", edgecolor="white", linewidth=1.5, zorder=8)
 
     x = [G.nodes[n]['x'] for n in nodes_to_plot if n in G.nodes]
@@ -117,10 +111,9 @@ def plot_graph_view(G, result, instance, is_shortest_path=False):
         ax.set_xlim(min(x) - pad_x, max(x) + pad_x)
         ax.set_ylim(min(y) - pad_y, max(y) + pad_y)
 
-    cust_label = "Destination Node" if is_shortest_path else "Customer (Value = Demand)"
     legend_handles.extend([
-        Line2D([0], [0], marker="*", color="none", markerfacecolor="#D90429", markeredgecolor="white", markersize=14, label=depot_label),
-        Line2D([0], [0], marker="o", color="none", markerfacecolor="white", markeredgecolor="#111827", markersize=10, label=cust_label),
+        Line2D([0], [0], marker="*", color="none", markerfacecolor="#D90429", markeredgecolor="white", markersize=14, label="Depot Base"),
+        Line2D([0], [0], marker="o", color="none", markerfacecolor="white", markeredgecolor="#111827", markersize=10, label="Customer (Value = Demand)"),
     ])
 
     ax.legend(handles=legend_handles, loc="best", frameon=True, framealpha=0.9, edgecolor="#e5e7eb", fontsize=9, ncol=min(3, len(legend_handles)))

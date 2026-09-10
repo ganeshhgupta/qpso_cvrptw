@@ -4,6 +4,7 @@ from .graph_model import build_stop_matrix, route_distance
 from .vrp import VRPInstance, split_random_key_solution, evaluate_routes
 from .qpso import QPSO
 from .baselines import run_random_search, run_exact_small, gap_percent
+from .ga import run_ga
 
 
 def build_optimizer(G, instance, time_weight=1.0, distance_weight=0.0):
@@ -57,9 +58,36 @@ def solve_qpso(G, instance, particles=30, iterations=100, seed=42,
         "algorithm": "QPSO",
         "score": score,
         "history": history,
-        "routes": result["routes"],
-        "travel_time_s": result["travel_time_s"],
-        "distance_m": result["distance_m"],
+        "routes": result.get("routes", []),
+        "travel_time_s": result.get("travel_time_s", float('inf')),
+        "distance_m": result.get("distance_m", float('inf')),
+        "paths": paths,
+    }
+
+
+def solve_ga_baseline(G, instance, particles=40, iterations=100, seed=42,
+                      time_weight=1.0, distance_weight=0.0):
+    evaluate, paths = build_optimizer(
+        G, instance, time_weight=time_weight,
+        distance_weight=distance_weight
+    )
+
+    best_x, score, history = run_ga(
+        evaluate_fn=evaluate, 
+        dimensions=len(instance.customers), 
+        population_size=particles, 
+        iterations=iterations, 
+        seed=seed
+    )
+    _, result = evaluate(best_x)
+
+    return {
+        "algorithm": "Genetic Algorithm",
+        "score": score,
+        "history": history,
+        "routes": result.get("routes", []),
+        "travel_time_s": result.get("travel_time_s", float('inf')),
+        "distance_m": result.get("distance_m", float('inf')),
         "paths": paths,
     }
 
@@ -80,9 +108,9 @@ def solve_random(G, instance, iterations=1000, seed=42,
         "algorithm": "Random Search",
         "score": score,
         "history": history,
-        "routes": result["routes"],
-        "travel_time_s": result["travel_time_s"],
-        "distance_m": result["distance_m"],
+        "routes": result.get("routes", []),
+        "travel_time_s": result.get("travel_time_s", float('inf')),
+        "distance_m": result.get("distance_m", float('inf')),
         "paths": paths,
     }
 
@@ -103,8 +131,8 @@ def solve_exact(G, instance, max_customers=9,
         "algorithm": "Exact Enumeration",
         "score": score,
         "history": [score],
-        "routes": result["routes"],
-        "travel_time_s": result["travel_time_s"],
-        "distance_m": result["distance_m"],
+        "routes": result.get("routes", []),
+        "travel_time_s": result.get("travel_time_s", float('inf')),
+        "distance_m": result.get("distance_m", float('inf')),
         "paths": paths,
     }

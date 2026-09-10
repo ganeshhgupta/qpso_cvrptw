@@ -1,6 +1,6 @@
 import networkx as nx
 
-def solve_dynamic_heuristic(G, instance, method='dijkstra', time_weight=1.0, distance_weight=0.0, is_shortest_path_mode=False):
+def solve_dynamic_heuristic(G, instance, method='dijkstra', time_weight=1.0, distance_weight=0.0):
     unvisited = [c.node for c in instance.customers]
     demands = {c.node: c.demand for c in instance.customers}
     routes, paths = [], {}
@@ -29,10 +29,8 @@ def solve_dynamic_heuristic(G, instance, method='dijkstra', time_weight=1.0, dis
             return path, t_s, d_m, cost
         except nx.NetworkXNoPath:
             return None, float('inf'), float('inf'), float('inf')
-
-    max_vehicles = 1 if is_shortest_path_mode else instance.num_vehicles
     
-    while unvisited and len(routes) < max_vehicles:
+    while unvisited and len(routes) < instance.num_vehicles:
         route = [instance.depot]
         current_load = 0
         current_node = instance.depot
@@ -40,7 +38,7 @@ def solve_dynamic_heuristic(G, instance, method='dijkstra', time_weight=1.0, dis
         while unvisited:
             best_next, best_cost, best_path, best_ts, best_dm = None, float('inf'), None, 0, 0
             for candidate in unvisited:
-                if is_shortest_path_mode or (current_load + demands[candidate] <= instance.vehicle_capacity):
+                if current_load + demands[candidate] <= instance.vehicle_capacity:
                     path, t_s, d_m, cost = get_dynamic_path(current_node, candidate)
                     if cost < best_cost:
                         best_cost, best_next, best_path, best_ts, best_dm = cost, candidate, path, t_s, d_m
@@ -57,18 +55,18 @@ def solve_dynamic_heuristic(G, instance, method='dijkstra', time_weight=1.0, dis
             total_cost += best_cost
             current_node = best_next
             
-        if not is_shortest_path_mode:
-            path, t_s, d_m, cost = get_dynamic_path(current_node, instance.depot)
-            route.append(instance.depot)
-            if path:
-                paths[(current_node, instance.depot)] = path
-                total_time += t_s
-                total_dist += d_m
-                total_cost += cost
+        path, t_s, d_m, cost = get_dynamic_path(current_node, instance.depot)
+        route.append(instance.depot)
+        if path:
+            paths[(current_node, instance.depot)] = path
+            total_time += t_s
+            total_dist += d_m
+            total_cost += cost
                 
         routes.append(route)
 
-    if unvisited and not is_shortest_path_mode:
+    # Penalty for failing to service customers within capacity/fleet constraints
+    if unvisited:
         total_cost += len(unvisited) * 999999.0
 
     name = "A* Constructive" if method == 'astar' else "Dijkstra Constructive"

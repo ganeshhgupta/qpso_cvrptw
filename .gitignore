@@ -11,3 +11,6 @@ venv/
 
 # App cache
 cache/
+
+# benchmark csv
+vrp_*
