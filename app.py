@@ -11,14 +11,13 @@ from core.engine import solve_exact, solve_qpso, solve_random, solve_ga_baseline
 from core.graph_model import load_osm_network
 from core.traffic import apply_traffic_scenario
 from core.vrp import Customer, VRPInstance
-
 from core.heuristics import solve_dynamic_heuristic
-from core.visualization import plot_map_view, plot_graph_view
+from core.visualization import plot_map_view, plot_graph_view, plot_gantt_chart
 
 # -----------------------------------------------------------------------------
 # Configuration & Styling
 # -----------------------------------------------------------------------------
-st.set_page_config(page_title="QPSO Urban Routing Framework", page_icon="🗺️", layout="wide", initial_sidebar_state="expanded")
+st.set_page_config(page_title="SIH VRP Engine", page_icon="🚚", layout="wide", initial_sidebar_state="expanded")
 
 st.markdown(
     """
@@ -26,201 +25,176 @@ st.markdown(
         .block-container { padding-top: 1.5rem; padding-bottom: 2rem; max-width: 95%; }
         .hero { padding-bottom: 1rem; border-bottom: 1px solid #e5e7eb; margin-bottom: 1.5rem; }
         .hero h1 { font-size: 2.2rem; margin-bottom: 0.2rem; letter-spacing: -0.02em; color: #111827; }
-        .hero p { color: #4b5563; margin: 0; font-size: 1.05rem; }
         .metric-card { border: 1px solid #e5e7eb; border-radius: 6px; padding: 1.2rem; background: #ffffff; min-height: 95px; box-shadow: 0 1px 2px rgba(0,0,0,0.05); }
         .metric-label { color: #6b7280; font-size: 0.75rem; text-transform: uppercase; font-weight: 600; letter-spacing: 0.05em; }
         .metric-value { font-size: 1.6rem; font-weight: 700; margin-top: 0.3rem; color: #111827; }
+        .metric-highlight { color: #2A9D8F; } /* Green for savings */
         .section-title { font-size: 1.25rem; font-weight: 600; margin: 1.5rem 0 1rem 0; color: #111827; }
-        [data-testid="stSidebar"] .block-container { padding-top: 1.5rem; }
-        div[role="radiogroup"] { gap: 15px; padding: 5px 0 10px 0; }
     </style>
-    """,
-    unsafe_allow_html=True,
+    """, unsafe_allow_html=True
 )
 
-st.markdown(
-    """
-    <div class="hero">
-        <h1>Quantum-Inspired Urban Routing Framework</h1>
-        <p>Dynamic modeling and optimization for large-scale Capacitated Vehicle Routing Problems (CVRPTW).</p>
-    </div>
-    """,
-    unsafe_allow_html=True,
-)
+st.markdown('<div class="hero"><h1>Enterprise Route Optimization Dashboard</h1><p>Quantum-Inspired framework minimizing operational cost and CO2 emissions in constrained urban environments.</p></div>', unsafe_allow_html=True)
 
 # -----------------------------------------------------------------------------
-# Core Helpers
+# Helpers
 # -----------------------------------------------------------------------------
 @st.cache_resource(show_spinner=False)
 def get_network(place_name):
     return load_osm_network(place_name)
 
-def choose_stops(G, n, seed=42, manual_depot=None, manual_customers=None):
-    if manual_depot and manual_customers:
-        all_nodes = set(G.nodes)
-        depot = int(manual_depot)
-        cust_list = [int(x.strip()) for x in manual_customers.split(",") if x.strip()]
-        if depot not in all_nodes or any(c not in all_nodes for c in cust_list):
-            st.warning("Manual Node IDs missing from graph. Falling back to random generation.")
-        else:
-            return depot, cust_list
-
+def choose_stops(G, n, seed):
     rng = np.random.default_rng(seed)
-    components = nx.weakly_connected_components(G) if G.is_directed() else nx.connected_components(G)
-    largest = max(components, key=len)
-    nodes = np.asarray(list(largest))
-    if len(nodes) < n + 1:
-        raise ValueError(f"Network requires {n + 1} connected nodes. Found {len(nodes)}.")
+    # CRITICAL FIX: Must be STRONGLY connected to guarantee legal driving paths exist between all nodes
+    components = nx.strongly_connected_components(G) if G.is_directed() else nx.connected_components(G)
+    nodes = np.asarray(list(max(components, key=len)))
     chosen = rng.choice(nodes, size=n + 1, replace=False)
     return int(chosen[0]), [int(x) for x in chosen[1:]]
 
 # -----------------------------------------------------------------------------
-# Sidebar Configuration
+# Sidebar
 # -----------------------------------------------------------------------------
 with st.sidebar:
-    st.header("Graph Environment")
+    st.header("1. Environment")
     place = st.text_input("OSM Location", "Manhattan, New York, USA")
-    customers_n = st.slider("Number of Destinations", 4, 30, 10)
-    vehicles = st.slider("Fleet Vehicles", 1, 10, 3)
-    capacity = st.number_input("Vehicle Capacity (Total Units)", min_value=1.0, value=25.0, step=1.0)
-    time_windows = st.checkbox("Enforce Time-Window Constraints (VRPTW)", value=True)
-
-    with st.expander("🛠 Advanced: Manual Node Mapping"):
-        st.caption("Leave blank to randomly generate based on seed.")
-        manual_depot = st.text_input("Origin/Depot Node ID", "")
-        manual_customers = st.text_input("Destination Node IDs (Comma Separated)", "")
-
-    traffic_seed = st.number_input("Traffic Scenario Seed", 0, 9999, 42)
-    objective_distance = st.slider("Distance Objective Weight", 0.0, 1.0, 0.2)
+    customers_n = st.slider("Delivery Stops", 4, 30, 10)
+    vehicles = st.slider("Fleet Size", 1, 10, 4)
+    capacity = st.number_input("Vehicle Capacity", value=25.0, step=1.0)
     
-    st.header("Algorithm Selection")
-    run_qpso = st.checkbox("QPSO (Quantum-Inspired)", value=True)
-    run_ga = st.checkbox("Genetic Algorithm (GA)", value=True)
-    run_astar = st.checkbox("A* Constructive Heuristic", value=True)
-    run_dijkstra = st.checkbox("Dijkstra Constructive Heuristic", value=True)
-    run_exact = st.checkbox("Exact Enumeration (≤ 9)", value=(customers_n <= 9))
-
-    st.header("Metaheuristic Hyperparameters")
+    st.header("2. Traffic Engine")
+    traffic_mode = st.radio("Data Source", ["Simulated (Seeded)", "Live Traffic API (Mock)"])
+    traffic_seed = st.number_input("Stochastic Seed", 0, 9999, 42) if "Simulated" in traffic_mode else 42
+    
+    st.header("3. Optimization Engine")
+    objective_distance = st.slider("Distance Penalty Weight (β)", 0.0, 1.0, 0.2)
     particles = st.slider("Swarm/Population Size", 10, 100, 40)
     iterations = st.slider("Max Iterations", 20, 500, 100)
 
-    run_btn = st.button("Execute Routing Experiment", type="primary", use_container_width=True)
+    run_btn = st.button("Initialize Dispatch Sequence", type="primary", use_container_width=True)
 
 # -----------------------------------------------------------------------------
-# Execution Engine
+# Execution
 # -----------------------------------------------------------------------------
 if 'results' not in st.session_state and not run_btn:
-    st.markdown("### Experiment Initialized")
-    sc1, sc2, sc3, sc4 = st.columns(4)
-    with sc1: st.markdown(f'<div class="metric-card"><div class="metric-label">Target Network</div><div class="metric-value">{place}</div></div>', unsafe_allow_html=True)
-    with sc2: st.markdown(f'<div class="metric-card"><div class="metric-label">Fleet Size</div><div class="metric-value">{vehicles}</div></div>', unsafe_allow_html=True)
-    with sc3: st.markdown(f'<div class="metric-card"><div class="metric-label">Time-Windows</div><div class="metric-value">{"Active" if time_windows else "Inactive"}</div></div>', unsafe_allow_html=True)
-    with sc4: st.markdown(f'<div class="metric-card"><div class="metric-label">Metaheuristic Evals</div><div class="metric-value">{particles * iterations}</div></div>', unsafe_allow_html=True)
-    st.info("👈 **Configure parameters in the sidebar and click 'Execute Routing Experiment'.**")
+    st.info("👈 **Configure fleet parameters and click 'Initialize Dispatch Sequence' to begin.**")
     st.stop()
 
 if run_btn:
-    if customers_n > 9 and run_exact:
-        st.sidebar.warning("Exact enumeration disabled (> 9 nodes).")
-        run_exact = False
-
     results = {}
-    start_total = time.perf_counter()
-
     try:
-        with st.spinner("Initializing OSM Network & Traffic Metrics..."):
+        with st.spinner("Ingesting GIS Topology & Traffic Data..."):
             G0 = get_network(place)
-            G = apply_traffic_scenario(G0, seed=int(traffic_seed))
+            mode = 'simulated' if "Simulated" in traffic_mode else 'live'
+            G = apply_traffic_scenario(G0, seed=int(traffic_seed), mode=mode)
             
+            # CRITICAL FIX: Repair OSMnx edge attributes for the QPSO distance matrix
             for u, v, k, data in G.edges(keys=True, data=True):
                 if 'distance_m' not in data: data['distance_m'] = float(data.get('length', 10.0))
                 if 'travel_time_s' not in data: data['travel_time_s'] = data['distance_m'] / 8.33
+            
+            depot, customer_nodes = choose_stops(G, customers_n, seed=int(traffic_seed))
+            demands = np.random.default_rng(int(traffic_seed)).integers(1, 8, size=len(customer_nodes))
+            customers_obj = [Customer(node=n, demand=float(d)) for n, d in zip(customer_nodes, demands)]
+            instance = VRPInstance(depot=depot, customers=customers_obj, vehicle_capacity=float(capacity), num_vehicles=int(vehicles))
 
-            depot, customer_nodes = choose_stops(G, customers_n, seed=int(traffic_seed), manual_depot=manual_depot, manual_customers=manual_customers)
-
-        rng = np.random.default_rng(int(traffic_seed))
-        demands = rng.integers(1, 8, size=len(customer_nodes))
-        customers_obj = [Customer(node=n, demand=float(d)) for n, d in zip(customer_nodes, demands)]
-        instance = VRPInstance(depot=depot, customers=customers_obj, vehicle_capacity=float(capacity), num_vehicles=int(vehicles))
-
-        if run_qpso:
-            with st.spinner("Computing QPSO Global Topology..."):
-                results['QPSO'] = solve_qpso(G, instance, particles=particles, iterations=iterations, seed=int(traffic_seed), distance_weight=objective_distance)
-        if run_ga:
-            with st.spinner("Computing GA Evolution..."):
-                results['GA'] = solve_ga_baseline(G, instance, particles=particles, iterations=iterations, seed=int(traffic_seed), distance_weight=objective_distance)
-        if run_astar:
-            with st.spinner("Computing A* Heuristic Baseline..."):
-                results['A*'] = solve_dynamic_heuristic(G, instance, method='astar', distance_weight=objective_distance)
-        if run_dijkstra:
-            with st.spinner("Computing Dijkstra Baseline..."):
-                results['Dijkstra'] = solve_dynamic_heuristic(G, instance, method='dijkstra', distance_weight=objective_distance)
-        if run_exact:
-            with st.spinner("Solving Exact Exhaustive..."):
-                results['Exact'] = solve_exact(G, instance, max_customers=9, distance_weight=objective_distance)
+        with st.spinner("Solving: A* Greedy Baseline..."):
+            results['A*'] = solve_dynamic_heuristic(G, instance, method='astar', distance_weight=objective_distance)
+        with st.spinner("Solving: QPSO (Quantum Swarm)..."):
+            results['QPSO'] = solve_qpso(G, instance, particles=particles, iterations=iterations, seed=int(traffic_seed), distance_weight=objective_distance)
+        with st.spinner("Solving: Genetic Algorithm..."):
+            results['GA'] = solve_ga_baseline(G, instance, particles=particles, iterations=iterations, seed=int(traffic_seed), distance_weight=objective_distance)
 
     except Exception as exc:
-        st.error(f"🚨 Execution Error: `{type(exc).__name__}: {exc}`")
-        with st.expander("🔍 View Detailed Error Traceback"): st.code(traceback.format_exc(), language="python")
+        st.error(f"🚨 Execution Error: {exc}")
         st.stop()
 
-    st.session_state.update({'results': results, 'G': G, 'instance': instance, 'elapsed': time.perf_counter() - start_total})
+    st.session_state.update({'results': results, 'G': G, 'instance': instance})
 
 # -----------------------------------------------------------------------------
-# Results Dashboard
+# Business Impact Dashboard
 # -----------------------------------------------------------------------------
 results = st.session_state['results']
 G = st.session_state['G']
 instance = st.session_state['instance']
-elapsed = st.session_state['elapsed']
 
-st.markdown('<div class="section-title" style="margin-top:0;">Visualize Algorithm Output</div>', unsafe_allow_html=True)
+# Calculate Business Metrics (Comparing QPSO to A* Baseline)
+qpso_dist = results['QPSO'].get('distance_m', 0) / 1000
+astar_dist = results['A*'].get('distance_m', 0) / 1000
+dist_saved_km = max(0, astar_dist - qpso_dist)
 
-c_toggle_1, c_toggle_2 = st.columns(2)
-with c_toggle_1: selected_algo = st.radio("Selected Algorithm:", list(results.keys()), horizontal=True)
-with c_toggle_2: view_mode = st.radio("Visualization Mode:", ["🗺️ Map View", "⏺️ Graph View"], horizontal=True)
+# India Logistics Averages: 8 km/L fuel efficiency, ₹100/L diesel, 2.68 kg CO2/L
+liters_saved = dist_saved_km / 8.0
+rupees_saved = liters_saved * 100.0
+co2_saved = liters_saved * 2.68
+
+st.markdown('<div class="section-title" style="margin-top:0;">Fleet Impact (QPSO vs. Traditional Dispatch)</div>', unsafe_allow_html=True)
+m1, m2, m3, m4 = st.columns(4)
+with m1: st.markdown(f'<div class="metric-card"><div class="metric-label">Route Optimization</div><div class="metric-value">{qpso_dist:.1f} km <span style="font-size:0.9rem; color:#6b7280;">(from {astar_dist:.1f})</span></div></div>', unsafe_allow_html=True)
+with m2: st.markdown(f'<div class="metric-card"><div class="metric-label">Operational Savings</div><div class="metric-value metric-highlight">₹ {rupees_saved:.0f}</div></div>', unsafe_allow_html=True)
+with m3: st.markdown(f'<div class="metric-card"><div class="metric-label">Fuel Reduction</div><div class="metric-value metric-highlight">{liters_saved:.1f} Liters</div></div>', unsafe_allow_html=True)
+with m4: st.markdown(f'<div class="metric-card"><div class="metric-label">Carbon Offset (CO2)</div><div class="metric-value metric-highlight">↓ {co2_saved:.1f} kg</div></div>', unsafe_allow_html=True)
+
+# -----------------------------------------------------------------------------
+# Operational Visualization
+# -----------------------------------------------------------------------------
+st.markdown('<div class="section-title">Operational Telemetry</div>', unsafe_allow_html=True)
+
+c_toggle_1, c_toggle_2 = st.columns([1, 2])
+with c_toggle_1: selected_algo = st.radio("Inspect Algorithm:", ["QPSO", "GA", "A*"], horizontal=True)
+with c_toggle_2: view_mode = st.radio("Telemetry Mode:", ["🗺️ Spatial (GIS View)", "⏺️ Topological (Graph)", "⏱️ Temporal (Schedule Gantt)"], horizontal=True)
 
 primary_res = results[selected_algo]
 
-c1, c2, c3, c4 = st.columns(4)
-with c1: st.markdown(f'<div class="metric-card"><div class="metric-label">{primary_res["algorithm"]} Score</div><div class="metric-value">{primary_res["score"]:.2f}</div></div>', unsafe_allow_html=True)
-with c2: st.markdown(f'<div class="metric-card"><div class="metric-label">Vehicles Utilized</div><div class="metric-value">{len([r for r in primary_res["routes"] if len(r)>2])} / {st.session_state.get("vehicles", vehicles)}</div></div>', unsafe_allow_html=True)
-with c3: st.markdown(f'<div class="metric-card"><div class="metric-label">Total Traversed Dist.</div><div class="metric-value">{primary_res["distance_m"]/1000:.2f} km</div></div>', unsafe_allow_html=True)
-with c4: st.markdown(f'<div class="metric-card"><div class="metric-label">Total Execution Time</div><div class="metric-value">{elapsed:.2f} s</div></div>', unsafe_allow_html=True)
-
-if "Map View" in view_mode:
+if "Spatial" in view_mode:
     fig = plot_map_view(G, primary_res, instance)
-else:
+elif "Topological" in view_mode:
     fig = plot_graph_view(G, primary_res, instance)
+else:
+    fig = plot_gantt_chart(G, primary_res, instance)
     
 st.pyplot(fig, use_container_width=True)
 plt.close(fig)
 
+# -----------------------------------------------------------------------------
+# Academic / Technical Proof
+# -----------------------------------------------------------------------------
+st.markdown('<div class="section-title">Engine Convergence & Benchmarking</div>', unsafe_allow_html=True)
 col_a, col_b = st.columns([1, 1.2])
-with col_a:
-    st.markdown('<div class="section-title">Algorithmic Benchmarking</div>', unsafe_allow_html=True)
-    comp_data = []
-    exact_score = results.get('Exact', {}).get('score', None)
-    
-    for key, res in results.items():
-        gap = gap_percent(res['score'], exact_score) if exact_score and key != 'Exact' else 0.0
-        comp_data.append({"Methodology": res['algorithm'], "Cost": res['score'], "Time (min)": res['travel_time_s'] / 60, "Gap %": f"{gap:.1f}%" if exact_score and key != 'Exact' else ("-" if key == 'Exact' else "N/A")})
-    st.dataframe(pd.DataFrame(comp_data).sort_values("Cost").style.format({"Cost": "{:.2f}", "Time (min)": "{:.1f}"}), use_container_width=True, hide_index=True)
 
+with col_a:
+    comp_data = []
+    for key, res in results.items():
+        dist_km = res.get('distance_m', 0) / 1000.0
+        time_min = res.get('travel_time_s', 0) / 60.0
+        comp_data.append({
+            "Methodology": res['algorithm'],
+            "Total Cost": res['score'],
+            "Distance (km)": dist_km,
+            "Travel Time (min)": time_min
+        })
+    st.dataframe(
+        pd.DataFrame(comp_data).sort_values("Total Cost").style.format({
+            "Total Cost": "{:.2f}", 
+            "Distance (km)": "{:.2f} km", 
+            "Travel Time (min)": "{:.1f} min"
+        }), 
+        use_container_width=True, 
+        hide_index=True
+    )
 with col_b:
-    st.markdown('<div class="section-title">Optimization Convergence</div>', unsafe_allow_html=True)
     fig_conv, ax = plt.subplots(figsize=(8, 3.8))
-    colors = {'QPSO': '#D90429', 'Genetic Algorithm': '#F4A261', 'A* Constructive': '#0077B6', 'Dijkstra Constructive': '#7209B7', 'Exact Enumeration': '#111827'}
+    colors = {'QPSO': '#D90429', 'Genetic Algorithm': '#F4A261', 'A* Constructive': '#111827'}
     
     for key, res in results.items():
         color = colors.get(res['algorithm'], '#888888')
-        if 'history' in res and res['algorithm'] in ['QPSO', 'Genetic Algorithm', 'Random Search']:
-            ax.plot(res["history"], color=color, linewidth=2.5, label=res['algorithm'])
-        else:
-            ax.axhline(y=res["score"], color=color, linestyle='--', linewidth=1.8, label=res['algorithm'])
+        if 'history' in res:
+            if res['algorithm'] == 'A* Constructive':
+                ax.axhline(y=res["score"], color=color, linestyle='--', linewidth=2.0, label=res['algorithm'])
+            else:
+                ax.plot(res["history"], color=color, linewidth=2.5, label=res['algorithm'])
             
-    ax.set_xlabel("Iteration Step")
-    ax.set_ylabel("Global Best Cost")
+    ax.set_xlabel("Iteration Epoch")
+    ax.set_ylabel("Global Objective Cost")
     ax.grid(True, alpha=0.3)
     ax.legend(bbox_to_anchor=(1.04, 1), loc="upper left", frameon=False, fontsize=9)
     fig_conv.tight_layout()

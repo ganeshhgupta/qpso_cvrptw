@@ -1,82 +1,53 @@
 import numpy as np
 
 class QPSO:
-    """
-    Maximally Efficient Quantum-behaved Particle Swarm Optimization.
-    Features matrix-vectorization for speed and topological boundary clipping 
-    for Random-Key stability.
-    """
-
-    def __init__(self, evaluate, n_particles=30, iterations=100,
-                 beta_max=1.0, beta_min=0.5, seed=42):
+    def __init__(self, evaluate, n_particles=40, iterations=100, seed=42):
         self.evaluate = evaluate
         self.n_particles = n_particles
         self.iterations = iterations
-        self.beta_max = beta_max
-        self.beta_min = beta_min
         self.rng = np.random.default_rng(seed)
-
-    def optimize(self, dimension):
-        X = self.rng.uniform(0.0, 1.0, (self.n_particles, dimension))
-        pbest = X.copy()
         
-        pbest_score = np.zeros(self.n_particles)
-        for i in range(self.n_particles):
-            score, _ = self.evaluate(X[i])
-            pbest_score[i] = score
-
-        g_idx = int(np.argmin(pbest_score))
-        gbest = pbest[g_idx].copy()
-        gbest_score = float(pbest_score[g_idx])
-
+    def optimize(self, dimensions):
+        # Initialize particles in continuous random-key space [0, 1]^N (matching GA)
+        particles = self.rng.uniform(0, 1, (self.n_particles, dimensions))
+        pbest = particles.copy()
+        
+        pbest_scores = np.array([self.evaluate(p)[0] for p in particles])
+        gbest_idx = np.argmin(pbest_scores)
+        gbest = pbest[gbest_idx].copy()
+        gbest_score = pbest_scores[gbest_idx]
+        
         history = [gbest_score]
         
-        # --- NEW: Stagnation Tracker ---
-        stagnation_counter = 0  
-        stagnation_limit = 15   # If no improvement for 15 steps, trigger reset
-
-        for t in range(self.iterations):
-            beta = self.beta_max - (self.beta_max - self.beta_min) * (t / max(1, self.iterations - 1))
-            mbest = np.mean(pbest, axis=0)
-
-            # Vectorized Quantum Math
-            phi = self.rng.random((self.n_particles, dimension))
-            attractor = phi * pbest + (1.0 - phi) * gbest
-            u = np.clip(self.rng.random((self.n_particles, dimension)), 1e-12, 1.0)
-            direction = np.where(self.rng.random((self.n_particles, dimension)) < 0.5, -1.0, 1.0)
+        for it in range(self.iterations):
+            # Adaptive contraction-expansion coefficient (smoothly transitions exploration to exploitation)
+            alpha = 1.0 - 0.6 * (it / self.iterations)
             
-            step = beta * np.abs(mbest - X) * np.log(1.0 / u)
-            X = attractor + direction * step
-            X = np.clip(X, 0.0, 1.0)
-
-            # --- NEW: Diversity Injection (The Escape Hatch) ---
-            if stagnation_counter > stagnation_limit:
-                # Find the worst 50% of particles and completely randomize their positions
-                worst_indices = np.argsort(pbest_score)[self.n_particles // 2:]
-                X[worst_indices] = self.rng.uniform(0.0, 1.0, (len(worst_indices), dimension))
-                stagnation_counter = 0 # Reset counter after injection
-            # ---------------------------------------------------
-
-            improved_this_step = False
-
+            # Compute Mean Best Position (mbest) of the swarm
+            mbest = np.mean(pbest, axis=0)
+            
             for i in range(self.n_particles):
-                score, _ = self.evaluate(X[i])
-
-                if score < pbest_score[i]:
-                    pbest[i] = X[i].copy()
-                    pbest_score[i] = score
-
+                # Quantum attractor: stochastic blend of personal and global best
+                phi = self.rng.uniform(0, 1, dimensions)
+                p = phi * pbest[i] + (1 - phi) * gbest
+                
+                # Quantum potential well position update
+                u = self.rng.uniform(0, 1, dimensions)
+                sign = np.where(self.rng.random(dimensions) > 0.5, 1, -1)
+                particles[i] = p + sign * alpha * np.abs(mbest - particles[i]) * np.log(1.0 / u)
+                
+                # Boundary clamping to [0, 1]
+                particles[i] = np.clip(particles[i], 0.0, 1.0)
+                
+                # Evaluate fitness
+                score, _ = self.evaluate(particles[i])
+                if score < pbest_scores[i]:
+                    pbest[i] = particles[i].copy()
+                    pbest_scores[i] = score
                     if score < gbest_score:
-                        gbest = X[i].copy()
-                        gbest_score = float(score)
-                        improved_this_step = True
-
-            # Track stagnation
-            if improved_this_step:
-                stagnation_counter = 0
-            else:
-                stagnation_counter += 1
-
+                        gbest = particles[i].copy()
+                        gbest_score = score
+                        
             history.append(gbest_score)
-
+            
         return gbest, gbest_score, history

@@ -85,3 +85,38 @@ def evaluate_routes(routes, instance, costs, distances, paths,
         "distance_m": total_distance,
         "objective": objective,
     }
+
+# Append this function to the bottom of core/vrp.py
+
+def optimize_route_2opt(route, costs):
+    """
+    Applies 2-opt local search to a single vehicle route to eliminate 
+    overlapping edges and minimize local transit cost.
+    """
+    if len(route) < 4:
+        return route
+        
+    best_route = list(route)
+    improved = True
+    
+    while improved:
+        improved = False
+        for i in range(1, len(best_route) - 2):
+            for j in range(i + 1, len(best_route)):
+                if j - i == 1: continue 
+                
+                # Reverse sub-segment between i and j
+                new_route = best_route[:i] + list(reversed(best_route[i:j])) + best_route[j:]
+                
+                # Quick cost evaluation of the sub-segments
+                old_cost = sum(costs.get((best_route[k], best_route[k+1]), 0) for k in range(len(best_route)-1))
+                new_cost = sum(costs.get((new_route[k], new_route[k+1]), 0) for k in range(len(new_route)-1))
+                
+                if new_cost < old_cost:
+                    best_route = new_route
+                    improved = True
+                    break
+            if improved:
+                break
+                
+    return best_route

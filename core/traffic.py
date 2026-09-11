@@ -1,34 +1,59 @@
 import numpy as np
 import networkx as nx
 
-
-def apply_traffic_scenario(G, seed=42, congestion_min=1.0, congestion_max=3.0):
-    """Assign reproducible traffic multipliers and derived travel-time weights."""
+def fetch_live_traffic_api(G, seed=42):
+    """
+    STUB: For SIH Finale. 
+    Simulates live unpredictable real-world bottlenecks 
+    by heavily penalizing central nodes to mimic rush hour.
+    """
     rng = np.random.default_rng(seed)
-    H = G.copy()
+    G_live = G.copy()
+    nodes = list(G_live.nodes)
+    central_nodes = set(nodes[:len(nodes)//4]) # Simulate downtown
+    
+    # Safe handling for both MultiDiGraph and standard DiGraph
+    is_multi = isinstance(G_live, (nx.MultiGraph, nx.MultiDiGraph))
+    edge_iter = G_live.edges(keys=True, data=True) if is_multi else G_live.edges(data=True)
+    
+    for edge in edge_iter:
+        if is_multi:
+            u, v, k, data = edge
+        else:
+            u, v, data = edge
+            
+        if 'travel_time_s' not in data:
+            data['travel_time_s'] = data.get('length', 10.0) / 8.33
+            
+        # Heavy congestion if passing through "downtown" nodes
+        if u in central_nodes or v in central_nodes:
+            data['travel_time_s'] *= rng.uniform(2.5, 5.0) 
+        else:
+            data['travel_time_s'] *= rng.uniform(1.0, 1.5)
+            
+    return G_live
 
-    for u, v, k, data in H.edges(keys=True, data=True):
-        length = float(data.get("length", 100.0))
-        speed_kph = float(data.get("maxspeed", 30.0)) if isinstance(data.get("maxspeed"), (int, float)) else 30.0
-        speed_mps = max(speed_kph / 3.6, 1.0)
-
-        free_flow_seconds = length / speed_mps
-        congestion = float(rng.uniform(congestion_min, congestion_max))
-
-        data["distance_m"] = length
-        data["free_flow_time_s"] = free_flow_seconds
-        data["congestion"] = congestion
-        data["travel_time_s"] = free_flow_seconds * congestion
-
-    return H
-
-
-def update_traffic(G, seed=None, low=1.0, high=3.0):
-    """Update congestion while preserving the physical road network."""
+def apply_traffic_scenario(G, seed=42, mode='simulated'):
+    """
+    Applies either reproducible seeded stochastic noise or live API data.
+    """
+    if mode == 'live':
+        return fetch_live_traffic_api(G, seed=seed)
+        
+    G_sim = G.copy()
     rng = np.random.default_rng(seed)
-
-    for _, _, _, data in G.edges(keys=True, data=True):
-        data["congestion"] = float(rng.uniform(low, high))
-        data["travel_time_s"] = data.get("free_flow_time_s", 1.0) * data["congestion"]
-
-    return G
+    
+    is_multi = isinstance(G_sim, (nx.MultiGraph, nx.MultiDiGraph))
+    edge_iter = G_sim.edges(keys=True, data=True) if is_multi else G_sim.edges(data=True)
+    
+    for edge in edge_iter:
+        if is_multi:
+            u, v, k, data = edge
+        else:
+            u, v, data = edge
+            
+        base_time = data.get('length', 10.0) / 8.33
+        multiplier = max(1.0, rng.normal(loc=1.2, scale=0.4))
+        data['travel_time_s'] = base_time * multiplier
+        
+    return G_sim

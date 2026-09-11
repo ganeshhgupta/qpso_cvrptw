@@ -1,7 +1,7 @@
 import numpy as np
 
 from .graph_model import build_stop_matrix, route_distance
-from .vrp import VRPInstance, split_random_key_solution, evaluate_routes
+from .vrp import VRPInstance, split_random_key_solution, evaluate_routes, optimize_route_2opt
 from .qpso import QPSO
 from .baselines import run_random_search, run_exact_small, gap_percent
 from .ga import run_ga
@@ -19,10 +19,27 @@ def build_optimizer(G, instance, time_weight=1.0, distance_weight=0.0):
     customers = instance.customers
 
     def evaluate(position):
-        order_idx = np.argsort(position)
+        # --- DUAL-COMPATIBLE DECODER ---
+        # Gracefully supports both continuous random keys (GA) and discrete permutations (QPSO)
+        pos_arr = np.asarray(position)
+        is_continuous = (
+            np.issubdtype(pos_arr.dtype, np.floating) or 
+            any(pos_arr != pos_arr.astype(int)) or 
+            len(np.unique(pos_arr)) < len(pos_arr) or
+            pos_arr.max() >= len(customers)
+        )
+        
+        if is_continuous:
+            order_idx = np.argsort(pos_arr)
+        else:
+            order_idx = [int(i) for i in pos_arr]
+
         order = [customers[i] for i in order_idx]
+        # -------------------------------
 
         routes = split_random_key_solution(order, instance)
+        routes = [optimize_route_2opt(r, costs) for r in routes]
+
         score, metrics = evaluate_routes(
             routes, instance, costs, distances, paths,
             time_weight=time_weight,
