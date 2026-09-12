@@ -1,14 +1,15 @@
-import osmnx as ox
 import networkx as nx
 
 
 def load_osm_network(place):
     """Download and project a drivable OSM street network."""
+    import osmnx as ox
     G = ox.graph_from_place(place, network_type="drive", simplify=True)
     return ox.project_graph(G)
 
 
 def nearest_node(G, x, y):
+    import osmnx as ox
     return ox.distance.nearest_nodes(G, X=x, Y=y)
 
 

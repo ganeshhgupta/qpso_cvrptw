@@ -15,3 +15,7 @@ cache/
 # benchmark csv
 vrp_*
 .vercel
+
+# node / next
+node_modules/
+.next/
