@@ -2,5 +2,9 @@
   "builds": [
     { "src": "api/solve.py", "use": "@vercel/python" },
     { "src": "package.json", "use": "@vercel/next" }
+  ],
+  "routes": [
+    { "src": "/api/solve", "dest": "api/solve.py" },
+    { "src": "/(.*)", "dest": "/$1" }
   ]
 }
