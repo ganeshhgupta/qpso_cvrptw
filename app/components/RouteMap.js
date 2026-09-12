@@ -1,55 +1,107 @@
 "use client";
 
-const ROUTE_COLORS = ["#D90429", "#2A9D8F", "#F4A261", "#457B9D", "#9B5DE5", "#00B4D8", "#FFB703", "#EF476F"];
+import { ROUTE_COLORS } from "./colors";
 
-export default function RouteMap({ graph, routes }) {
+function toPathData(pts) {
+  return pts.map((p, i) => `${i === 0 ? "M" : "L"} ${p.x} ${p.y}`).join(" ");
+}
+
+export default function RouteMap({ graph, routes, speed = 1 }) {
   if (!graph) return null;
 
   const xs = graph.nodes.map((n) => n.x);
   const ys = graph.nodes.map((n) => n.y);
   const minX = Math.min(...xs), maxX = Math.max(...xs);
   const minY = Math.min(...ys), maxY = Math.max(...ys);
-  const pad = (maxX - minX || 1) * 0.08;
+  const span = maxX - minX || 1;
+  const pad = span * 0.08;
   const vb = `${minX - pad} ${minY - pad} ${maxX - minX + 2 * pad} ${maxY - minY + 2 * pad}`;
 
   const byId = Object.fromEntries(graph.nodes.map((n) => [n.id, n]));
   const customerSet = new Set(graph.customers);
+  const activeRoutes = (routes || []).filter((r) => r.length > 2);
 
   return (
-    <svg viewBox={vb} width="100%" height="420" style={{ background: "#05080b", borderRadius: 6 }}>
-      {graph.edges.map((e, i) => {
-        const a = byId[e.u], b = byId[e.v];
-        if (!a || !b) return null;
-        return (
-          <line key={i} x1={a.x} y1={a.y} x2={b.x} y2={b.y}
-            stroke="#21262d" strokeWidth={(maxX - minX) * 0.0015} />
-        );
-      })}
+    <div>
+      <svg viewBox={vb} width="100%" height="440" style={{ background: "#04070b", borderRadius: 8, display: "block" }}>
+        {graph.edges.map((e, i) => {
+          const a = byId[e.u], b = byId[e.v];
+          if (!a || !b) return null;
+          return (
+            <line key={i} x1={a.x} y1={a.y} x2={b.x} y2={b.y}
+              stroke="#161f2c" strokeWidth={span * 0.0012} />
+          );
+        })}
 
-      {(routes || []).map((route, ri) => {
-        const color = ROUTE_COLORS[ri % ROUTE_COLORS.length];
-        const pts = route.map((id) => byId[id]).filter(Boolean);
-        if (pts.length < 2) return null;
-        const d = pts.map((p) => `${p.x},${p.y}`).join(" ");
-        return (
-          <polyline key={ri} points={d} fill="none" stroke={color}
-            strokeWidth={(maxX - minX) * 0.005} strokeLinecap="round" strokeLinejoin="round" opacity={0.9} />
-        );
-      })}
+        {activeRoutes.map((route, ri) => {
+          const color = ROUTE_COLORS[ri % ROUTE_COLORS.length];
+          const pts = route.map((id) => byId[id]).filter(Boolean);
+          if (pts.length < 2) return null;
+          const d = toPathData(pts);
+          const dur = (7 + ri * 1.3) / speed;
+          const drawDur = 1.1 + ri * 0.12;
 
-      {graph.nodes.map((n) => (
-        <circle key={n.id} cx={n.x} cy={n.y}
-          r={(maxX - minX) * (customerSet.has(n.id) ? 0.006 : 0.0015)}
-          fill={customerSet.has(n.id) ? "#f0f6fc" : "#30363d"} />
-      ))}
+          return (
+            <g key={ri}>
+              <path
+                d={d}
+                pathLength={100}
+                fill="none"
+                stroke={color}
+                strokeWidth={span * 0.0045}
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                opacity={0.9}
+                style={{
+                  strokeDasharray: 100,
+                  strokeDashoffset: 100,
+                  animation: `drawPath ${drawDur}s var(--ease) forwards`,
+                }}
+              />
+              <circle r={span * 0.008} fill={color}>
+                <animateMotion
+                  path={d}
+                  dur={`${dur}s`}
+                  begin={`${drawDur}s`}
+                  repeatCount="indefinite"
+                  rotate="auto"
+                />
+              </circle>
+            </g>
+          );
+        })}
 
-      <rect
-        x={byId[graph.depot].x - (maxX - minX) * 0.01}
-        y={byId[graph.depot].y - (maxX - minX) * 0.01}
-        width={(maxX - minX) * 0.02}
-        height={(maxX - minX) * 0.02}
-        fill="#F4A261"
-      />
-    </svg>
+        {graph.nodes.map((n) => (
+          <circle key={n.id} cx={n.x} cy={n.y}
+            r={span * (customerSet.has(n.id) ? 0.006 : 0.0014)}
+            fill={customerSet.has(n.id) ? "#f0f6fc" : "#2a3444"}>
+            <title>{customerSet.has(n.id) ? `Customer stop #${n.id}` : `Junction #${n.id}`}</title>
+          </circle>
+        ))}
+
+        <rect
+          x={byId[graph.depot].x - span * 0.011}
+          y={byId[graph.depot].y - span * 0.011}
+          width={span * 0.022}
+          height={span * 0.022}
+          fill="#f4a261"
+          style={{ animation: "glowPulse 2.2s ease-in-out infinite" }}
+        >
+          <title>Depot</title>
+        </rect>
+      </svg>
+
+      <div className="legend-row">
+        <span><span className="legend-swatch" style={{ background: "#f4a261" }} /> Depot</span>
+        <span><span className="legend-swatch" style={{ background: "#f0f6fc" }} /> Customer stop</span>
+        <span><span className="legend-swatch" style={{ background: "#2a3444" }} /> Road junction</span>
+        {activeRoutes.map((_, ri) => (
+          <span key={ri}>
+            <span className="legend-swatch" style={{ background: ROUTE_COLORS[ri % ROUTE_COLORS.length] }} />
+            Vehicle {ri + 1}
+          </span>
+        ))}
+      </div>
+    </div>
   );
 }

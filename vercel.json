@@ -1,10 +1,12 @@
 {
   "builds": [
     { "src": "api/solve.py", "use": "@vercel/python" },
+    { "src": "api/explain.py", "use": "@vercel/python" },
     { "src": "package.json", "use": "@vercel/next" }
   ],
   "routes": [
     { "src": "/api/solve", "dest": "api/solve.py" },
+    { "src": "/api/explain", "dest": "api/explain.py" },
     { "src": "/(.*)", "dest": "/$1" }
   ]
 }
