@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import RouteMap from "./components/RouteMap";
 import ConvergenceChart from "./components/ConvergenceChart";
 import StageTicker from "./components/StageTicker";
@@ -20,8 +20,17 @@ const DEFAULTS = {
   networkSize: 90,
 };
 
+const WARM_PRESETS = [
+  { ...DEFAULTS, customers: 16, vehicles: 5, seed: 7 },
+  { ...DEFAULTS, customers: 22, vehicles: 6, seed: 11 },
+];
+
 function fmt(n, digits = 1) {
   return Number.isFinite(n) ? n.toFixed(digits) : "-";
+}
+
+function keyOf(p) {
+  return JSON.stringify(p);
 }
 
 export default function Page() {
@@ -38,59 +47,100 @@ export default function Page() {
   const [explaining, setExplaining] = useState(false);
   const [explainError, setExplainError] = useState(null);
 
+  const cacheRef = useRef({});
+
   const set = (key) => (e) => {
     const value = e.target.type === "number" || e.target.type === "range" ? Number(e.target.value) : e.target.value;
     setParams((p) => ({ ...p, [key]: value }));
   };
 
-  async function run() {
+  async function fetchSolve(p) {
+    const key = keyOf(p);
+    if (cacheRef.current[key]) return cacheRef.current[key];
+    const res = await fetch("/api/solve", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(p),
+    });
+    const json = await res.json();
+    if (!res.ok || json.error) throw new Error(json.error || `Request failed (${res.status})`);
+    cacheRef.current[key] = json;
+    return json;
+  }
+
+  async function run(customParams) {
+    const p = customParams || params;
     setLoading(true);
     setJustDone(false);
     setError(null);
     try {
-      const res = await fetch("/api/solve", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(params),
-      });
-      const json = await res.json();
-      if (!res.ok || json.error) throw new Error(json.error || `Request failed (${res.status})`);
+      const json = await fetchSolve(p);
       setJustDone(true);
       setTimeout(() => {
         setData(json);
         setAlgo("QPSO");
         setRunId((r) => r + 1);
         setLoading(false);
-        setExplanation(null);
-        setExplainError(null);
-      }, 450);
+      }, 350);
     } catch (e) {
       setError(e.message);
       setLoading(false);
     }
   }
 
-  async function explainRun() {
+  // Load a real result the moment the page opens, then quietly warm a couple
+  // of alternate scenarios one by one so switching presets later feels instant.
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      await run(DEFAULTS);
+      for (const preset of WARM_PRESETS) {
+        if (cancelled) return;
+        try {
+          await fetchSolve(preset);
+        } catch (e) {
+          console.warn("background warm-up failed for preset", preset, e);
+        }
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Auto-generate the plain-English recap whenever a new run actually lands
+  // (not for silent background warm-ups, which never touch `runId`).
+  useEffect(() => {
+    if (runId === 0) return;
+    let cancelled = false;
     setExplaining(true);
     setExplainError(null);
-    try {
-      const trimmed = Object.fromEntries(
-        Object.entries(results).map(([k, r]) => [k, { score: r.score, distance_m: r.distance_m, travel_time_s: r.travel_time_s }])
-      );
-      const res = await fetch("/api/explain", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ algo, results: trimmed }),
-      });
-      const json = await res.json();
-      if (!res.ok || json.error) throw new Error(json.error || `Request failed (${res.status})`);
-      setExplanation(json.explanation);
-    } catch (e) {
-      setExplainError(e.message);
-    } finally {
-      setExplaining(false);
-    }
-  }
+    setExplanation(null);
+    (async () => {
+      try {
+        const trimmed = Object.fromEntries(
+          Object.entries(data.results).map(([k, r]) => [k, { score: r.score, distance_m: r.distance_m, travel_time_s: r.travel_time_s }])
+        );
+        const res = await fetch("/api/explain", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ algo: "QPSO", results: trimmed }),
+        });
+        const json = await res.json();
+        if (!res.ok || json.error) throw new Error(json.error || `Request failed (${res.status})`);
+        if (!cancelled) setExplanation(json.explanation);
+      } catch (e) {
+        if (!cancelled) setExplainError(e.message);
+      } finally {
+        if (!cancelled) setExplaining(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [runId]);
 
   const results = data?.results;
   const primary = results?.[algo];
@@ -165,7 +215,7 @@ export default function Page() {
               <input type="range" min={30} max={200} value={params.networkSize} onChange={set("networkSize")} />
             </div>
 
-            <button className="run-btn" onClick={run} disabled={loading}>
+            <button className="run-btn" onClick={() => run()} disabled={loading}>
               {loading ? (justDone ? "Done!" : "Solving...") : "Initialize Dispatch Sequence"}
             </button>
           </aside>
@@ -179,10 +229,6 @@ export default function Page() {
             {error && <div className="error-banner">{error}</div>}
 
             <StageTicker active={loading} done={justDone} />
-
-            {!data && !error && !loading && (
-              <p className="hint">Configure fleet parameters and click &ldquo;Initialize Dispatch Sequence&rdquo; to run QPSO, GA and A* on a freshly generated network. Curious what actually happens? Check &ldquo;How It Works&rdquo; above.</p>
-            )}
 
             {results && (
               <>
@@ -257,26 +303,25 @@ export default function Page() {
                     </tbody>
                   </table>
                 </div>
-
-                <div className="section-title">
-                  Plain-English Recap <span className="tag">AI</span>
-                </div>
-                <div className="panel">
-                  {!explanation && !explaining && (
-                    <button className="tab" onClick={explainRun}>Explain this run in plain English</button>
-                  )}
-                  {explaining && <p className="hint">Asking an LLM to summarize this run&hellip;</p>}
-                  {explainError && <div className="error-banner">{explainError}</div>}
-                  {explanation && (
-                    <>
-                      <p style={{ lineHeight: 1.6, margin: 0 }}>{explanation}</p>
-                      <button className="tab" style={{ marginTop: "0.8rem" }} onClick={explainRun}>Regenerate</button>
-                    </>
-                  )}
-                </div>
               </>
             )}
           </main>
+
+          <aside className="rail">
+            <h2 style={{ margin: "0 0 0.9rem" }}>In Plain English</h2>
+            {!results && (
+              <p className="hint">A friendly, jargon-free explanation of what the algorithm just did will appear here as soon as a run loads.</p>
+            )}
+            {results && explaining && (
+              <div className="rail-skeleton">
+                <div className="skeleton-line" />
+                <div className="skeleton-line" />
+                <div className="skeleton-line short" />
+              </div>
+            )}
+            {results && explainError && <div className="error-banner">{explainError}</div>}
+            {results && explanation && !explaining && <p className="rail-text">{explanation}</p>}
+          </aside>
         </div>
       )}
     </>

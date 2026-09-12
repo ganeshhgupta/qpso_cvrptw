@@ -29,7 +29,7 @@ export default function RouteMap({ graph, routes, speed = 1 }) {
           if (!a || !b) return null;
           return (
             <line key={i} x1={a.x} y1={a.y} x2={b.x} y2={b.y}
-              stroke="#161f2c" strokeWidth={span * 0.0012} />
+              stroke="#33475e" strokeWidth={span * 0.0014} opacity={0.75} />
           );
         })}
 
@@ -73,8 +73,8 @@ export default function RouteMap({ graph, routes, speed = 1 }) {
 
         {graph.nodes.map((n) => (
           <circle key={n.id} cx={n.x} cy={n.y}
-            r={span * (customerSet.has(n.id) ? 0.006 : 0.0014)}
-            fill={customerSet.has(n.id) ? "#f0f6fc" : "#2a3444"}>
+            r={span * (customerSet.has(n.id) ? 0.006 : 0.0022)}
+            fill={customerSet.has(n.id) ? "#f0f6fc" : "#4d6a89"}>
             <title>{customerSet.has(n.id) ? `Customer stop #${n.id}` : `Junction #${n.id}`}</title>
           </circle>
         ))}
@@ -94,7 +94,7 @@ export default function RouteMap({ graph, routes, speed = 1 }) {
       <div className="legend-row">
         <span><span className="legend-swatch" style={{ background: "#f4a261" }} /> Depot</span>
         <span><span className="legend-swatch" style={{ background: "#f0f6fc" }} /> Customer stop</span>
-        <span><span className="legend-swatch" style={{ background: "#2a3444" }} /> Road junction</span>
+        <span><span className="legend-swatch" style={{ background: "#4d6a89" }} /> Road junction</span>
         {activeRoutes.map((_, ri) => (
           <span key={ri}>
             <span className="legend-swatch" style={{ background: ROUTE_COLORS[ri % ROUTE_COLORS.length] }} />
