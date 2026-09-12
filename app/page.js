@@ -29,8 +29,44 @@ function fmt(n, digits = 1) {
   return Number.isFinite(n) ? n.toFixed(digits) : "-";
 }
 
+function ExplanationBody({ text }) {
+  const lines = text.split("\n").map((l) => l.trim()).filter(Boolean);
+  const bulletLines = lines.filter((l) => /^[-*•]\s+/.test(l));
+
+  if (bulletLines.length >= 2) {
+    return (
+      <ul className="rail-list">
+        {lines.map((l, i) => (
+          <li key={i}>{l.replace(/^[-*•]\s+/, "")}</li>
+        ))}
+      </ul>
+    );
+  }
+  return <p className="rail-text">{text}</p>;
+}
+
 function keyOf(p) {
   return JSON.stringify(p);
+}
+
+const STORAGE_PREFIX = "qpso_cache_v1:";
+
+function readStorage(key) {
+  try {
+    const raw = window.localStorage.getItem(STORAGE_PREFIX + key);
+    return raw ? JSON.parse(raw) : null;
+  } catch (e) {
+    console.warn("cache read failed", e);
+    return null;
+  }
+}
+
+function writeStorage(key, value) {
+  try {
+    window.localStorage.setItem(STORAGE_PREFIX + key, JSON.stringify(value));
+  } catch (e) {
+    console.warn("cache write failed (quota or private mode?)", e);
+  }
 }
 
 export default function Page() {
@@ -48,15 +84,26 @@ export default function Page() {
   const [explainError, setExplainError] = useState(null);
 
   const cacheRef = useRef({});
+  const lastKeyRef = useRef(null);
 
   const set = (key) => (e) => {
     const value = e.target.type === "number" || e.target.type === "range" ? Number(e.target.value) : e.target.value;
     setParams((p) => ({ ...p, [key]: value }));
   };
 
-  async function fetchSolve(p) {
+  function checkCache(p) {
     const key = keyOf(p);
     if (cacheRef.current[key]) return cacheRef.current[key];
+    const stored = readStorage(key);
+    if (stored) {
+      cacheRef.current[key] = stored;
+      return stored;
+    }
+    return null;
+  }
+
+  async function fetchNetwork(p) {
+    const key = keyOf(p);
     const res = await fetch("/api/solve", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -65,16 +112,35 @@ export default function Page() {
     const json = await res.json();
     if (!res.ok || json.error) throw new Error(json.error || `Request failed (${res.status})`);
     cacheRef.current[key] = json;
+    writeStorage(key, json);
     return json;
+  }
+
+  // Cache-first: reuse an already-computed result (this tab or a past visit)
+  // instead of ever recalculating the same scenario twice.
+  async function fetchSolve(p) {
+    return checkCache(p) || fetchNetwork(p);
   }
 
   async function run(customParams) {
     const p = customParams || params;
+    lastKeyRef.current = keyOf(p);
+    setError(null);
+
+    const cached = checkCache(p);
+    if (cached) {
+      setData(cached);
+      setAlgo("QPSO");
+      setRunId((r) => r + 1);
+      setLoading(false);
+      setJustDone(false);
+      return;
+    }
+
     setLoading(true);
     setJustDone(false);
-    setError(null);
     try {
-      const json = await fetchSolve(p);
+      const json = await fetchNetwork(p);
       setJustDone(true);
       setTimeout(() => {
         setData(json);
@@ -113,6 +179,15 @@ export default function Page() {
   // (not for silent background warm-ups, which never touch `runId`).
   useEffect(() => {
     if (runId === 0) return;
+    const explainKey = `explain:${lastKeyRef.current}`;
+    const cachedExplanation = readStorage(explainKey);
+    if (cachedExplanation) {
+      setExplanation(cachedExplanation);
+      setExplaining(false);
+      setExplainError(null);
+      return;
+    }
+
     let cancelled = false;
     setExplaining(true);
     setExplainError(null);
@@ -122,14 +197,18 @@ export default function Page() {
         const trimmed = Object.fromEntries(
           Object.entries(data.results).map(([k, r]) => [k, { score: r.score, distance_m: r.distance_m, travel_time_s: r.travel_time_s }])
         );
+        const usedParams = lastKeyRef.current ? JSON.parse(lastKeyRef.current) : params;
         const res = await fetch("/api/explain", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ algo: "QPSO", results: trimmed }),
+          body: JSON.stringify({ algo: "QPSO", results: trimmed, params: usedParams }),
         });
         const json = await res.json();
         if (!res.ok || json.error) throw new Error(json.error || `Request failed (${res.status})`);
-        if (!cancelled) setExplanation(json.explanation);
+        if (!cancelled) {
+          setExplanation(json.explanation);
+          writeStorage(explainKey, json.explanation);
+        }
       } catch (e) {
         if (!cancelled) setExplainError(e.message);
       } finally {
@@ -320,7 +399,7 @@ export default function Page() {
               </div>
             )}
             {results && explainError && <div className="error-banner">{explainError}</div>}
-            {results && explanation && !explaining && <p className="rail-text">{explanation}</p>}
+            {results && explanation && !explaining && <ExplanationBody text={explanation} />}
           </aside>
         </div>
       )}

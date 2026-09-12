@@ -9,20 +9,41 @@ MODEL = "openai/gpt-4o-mini"
 
 
 def _build_prompt(payload):
-    algo = payload.get("algo", "QPSO")
     results = payload.get("results", {})
+    params = payload.get("params", {}) or {}
+
     lines = []
     for name, r in results.items():
         dist_km = round((r.get("distance_m") or 0) / 1000, 2)
         time_min = round((r.get("travel_time_s") or 0) / 60, 1)
         lines.append(f"{name}: cost={r.get('score')}, distance_km={dist_km}, travel_time_min={time_min}")
     summary = "\n".join(lines)
+
+    scenario = (
+        f"customers={params.get('customers')}, vehicles={params.get('vehicles')}, "
+        f"vehicle_capacity={params.get('capacity')}, traffic_mode={params.get('trafficMode')}, "
+        f"distance_penalty_weight={params.get('distanceWeight')}, swarm_size={params.get('particles')}, "
+        f"max_iterations={params.get('iterations')}, road_network_size={params.get('networkSize')}"
+    )
+
     return (
-        "You are explaining the result of a vehicle routing optimization run to a non-technical reader. "
-        "Use simple, friendly, plain English, no jargon, no equations, no markdown. Keep it to 3-4 short sentences. "
-        f"The reader is currently looking at the '{algo}' result.\n\n"
-        f"Raw results:\n{summary}\n\n"
-        "Explain what just happened and why the numbers differ between methods."
+        "You are a patient, encouraging teacher explaining a vehicle-routing optimization run to a student who has "
+        "never seen this before. Write an elaborate, easy-to-follow explanation as a bullet-point list of 6 to 9 "
+        "bullets. Each bullet must start with '- ' and contain one complete idea. Use simple, plain English: no "
+        "jargon, no equations, no markdown headers or bold, just the bullet list itself.\n\n"
+        "Cover, in this rough order:\n"
+        "1. What problem this specific run was solving, in the student's own scenario (mention the number of "
+        "delivery stops and vehicles).\n"
+        "2. What each of the three methods (QPSO, GA, A*) actually did, in intuitive terms (no formulas) - "
+        "e.g. QPSO as a swarm exploring possibilities, GA as evolving generations of route plans, A* as a "
+        "quick greedy planner.\n"
+        "3. What the resulting numbers (cost, distance, time) mean in practice and why they differ between "
+        "methods.\n"
+        "4. The real-world takeaway - money, fuel and CO2 saved by picking the best method over the naive "
+        "baseline.\n\n"
+        f"Scenario parameters:\n{scenario}\n\n"
+        f"Results:\n{summary}\n\n"
+        "Respond with ONLY the bullet list, one bullet per line, each starting with '- '."
     )
 
 
@@ -46,7 +67,7 @@ def app(environ, start_response):
         req_body = json.dumps({
             "model": MODEL,
             "messages": [{"role": "user", "content": prompt}],
-            "max_tokens": 220,
+            "max_tokens": 650,
             "temperature": 0.6,
         }).encode("utf-8")
 

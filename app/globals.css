@@ -268,6 +268,26 @@ body {
   animation: fadeInUp 0.35s var(--ease);
 }
 
+.rail-list {
+  margin: 0;
+  padding-left: 1.1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.65rem;
+  animation: fadeInUp 0.35s var(--ease);
+}
+
+.rail-list li {
+  font-size: 0.86rem;
+  line-height: 1.55;
+  color: #d6dde7;
+  padding-left: 0.3rem;
+}
+
+.rail-list li::marker {
+  color: var(--accent-2);
+}
+
 .rail-skeleton {
   display: flex;
   flex-direction: column;
