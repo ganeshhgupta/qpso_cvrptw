@@ -14,3 +14,4 @@ cache/
 
 # benchmark csv
 vrp_*
+.vercel
