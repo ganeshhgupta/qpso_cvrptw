@@ -1,7 +1,6 @@
 {
-  "functions": {
-    "api/solve.py": {
-      "maxDuration": 60
-    }
-  }
+  "builds": [
+    { "src": "api/solve.py", "use": "@vercel/python" },
+    { "src": "package.json", "use": "@vercel/next" }
+  ]
 }
