@@ -69,6 +69,10 @@ def prepare_osm_graph(place_name: str):
     GRAPH_CACHE[place_name] = G
     return G
 
+@app.get("/")
+def check_running():
+    return {"status": "running", "service": "Quantum VRP Dispatch Engine"}
+
 @app.post("/api/optimize")
 def run_optimization(req: OptimizationRequest):
     try:
