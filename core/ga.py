@@ -12,7 +12,10 @@ def run_ga(evaluate_fn, dimensions, population_size=40, iterations=100, mutation
     fitness_scores = np.full(population_size, np.inf)
     
     global_best_cost = np.inf
-    global_best_position = None
+    # Seeded with a real individual (not None) so an all-infeasible population
+    # (e.g. capacity far too low for demand) still returns a valid position
+    # instead of crashing the caller.
+    global_best_position = population[0].copy()
     history = []
     
     for it in range(iterations):

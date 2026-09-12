@@ -241,6 +241,53 @@ body {
   align-self: start;
   max-height: calc(100vh - 60px);
   overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: var(--border) transparent;
+}
+
+.rail::-webkit-scrollbar {
+  width: 8px;
+}
+
+.rail::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.rail::-webkit-scrollbar-thumb {
+  background: var(--border);
+  border-radius: 999px;
+  border: 2px solid transparent;
+  background-clip: padding-box;
+}
+
+.rail::-webkit-scrollbar-thumb:hover {
+  background: var(--accent-2);
+  background-clip: padding-box;
+}
+
+/* Same page-level scrollbar treatment so the whole app reads as one system */
+html {
+  scrollbar-width: thin;
+  scrollbar-color: var(--border) var(--bg);
+}
+
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+::-webkit-scrollbar-track {
+  background: var(--bg);
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--border);
+  border-radius: 999px;
+  border: 2px solid var(--bg);
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--accent-2);
 }
 
 .rail h2 {
@@ -495,6 +542,44 @@ table.compare tr:hover td {
 .hint {
   color: var(--text-dim);
   font-size: 0.9rem;
+}
+
+.welcome {
+  animation: fadeInUp 0.4s var(--ease);
+}
+
+.welcome-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 0.9rem;
+  margin: 0;
+}
+
+.welcome-item {
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--panel);
+  padding: 0.9rem 1rem;
+}
+
+.welcome-item dt {
+  font-weight: 700;
+  font-size: 0.85rem;
+  color: var(--accent-2);
+  margin-bottom: 0.3rem;
+}
+
+.welcome-item dd {
+  margin: 0;
+  font-size: 0.82rem;
+  line-height: 1.5;
+  color: var(--text-dim);
+}
+
+@media (max-width: 700px) {
+  .welcome-grid {
+    grid-template-columns: 1fr;
+  }
 }
 
 .grid-2 {

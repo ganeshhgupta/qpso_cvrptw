@@ -38,7 +38,8 @@ def build_optimizer(G, instance, time_weight=1.0, distance_weight=0.0):
         # -------------------------------
 
         routes = split_random_key_solution(order, instance)
-        routes = [optimize_route_2opt(r, costs) for r in routes]
+        if routes is not None:
+            routes = [optimize_route_2opt(r, costs) for r in routes]
 
         score, metrics = evaluate_routes(
             routes, instance, costs, distances, paths,

@@ -33,13 +33,19 @@ def split_random_key_solution(order, instance: VRPInstance):
             current.append(customer.node)
             load += customer.demand
         else:
-            current.append(instance.depot)
-            routes.append(current)
+            # Only close out `current` as a used route if it actually served a
+            # customer - otherwise (e.g. the very first customer's demand alone
+            # already exceeds capacity) this would burn a vehicle on a route
+            # with nobody on it before that customer even gets one.
+            if len(current) > 1:
+                current.append(instance.depot)
+                routes.append(current)
             current = [instance.depot, customer.node]
             load = customer.demand
 
-    current.append(instance.depot)
-    routes.append(current)
+    if len(current) > 1:
+        current.append(instance.depot)
+        routes.append(current)
 
     if len(routes) > instance.num_vehicles:
         return None

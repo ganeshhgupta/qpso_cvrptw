@@ -6,6 +6,7 @@ import ConvergenceChart from "./components/ConvergenceChart";
 import StageTicker from "./components/StageTicker";
 import MetricCard from "./components/MetricCard";
 import HowItWorks from "./components/HowItWorks";
+import WelcomeGuide from "./components/WelcomeGuide";
 import { ALGO_COLORS } from "./components/colors";
 
 const DEFAULTS = {
@@ -66,6 +67,26 @@ function writeStorage(key, value) {
     window.localStorage.setItem(STORAGE_PREFIX + key, JSON.stringify(value));
   } catch (e) {
     console.warn("cache write failed (quota or private mode?)", e);
+  }
+}
+
+const LAST_SHOWN_KEY = "qpso_last_shown_v1";
+
+function readLastShown() {
+  try {
+    const raw = window.localStorage.getItem(LAST_SHOWN_KEY);
+    return raw ? JSON.parse(raw) : null;
+  } catch (e) {
+    console.warn("last-shown read failed", e);
+    return null;
+  }
+}
+
+function writeLastShown(p, json) {
+  try {
+    window.localStorage.setItem(LAST_SHOWN_KEY, JSON.stringify({ params: p, data: json }));
+  } catch (e) {
+    console.warn("last-shown write failed", e);
   }
 }
 
@@ -130,10 +151,12 @@ export default function Page() {
     const cached = checkCache(p);
     if (cached) {
       setData(cached);
+      setParams(p);
       setAlgo("QPSO");
       setRunId((r) => r + 1);
       setLoading(false);
       setJustDone(false);
+      writeLastShown(p, cached);
       return;
     }
 
@@ -144,9 +167,11 @@ export default function Page() {
       setJustDone(true);
       setTimeout(() => {
         setData(json);
+        setParams(p);
         setAlgo("QPSO");
         setRunId((r) => r + 1);
         setLoading(false);
+        writeLastShown(p, json);
       }, 350);
     } catch (e) {
       setError(e.message);
@@ -154,13 +179,25 @@ export default function Page() {
     }
   }
 
-  // Load a real result the moment the page opens, then quietly warm a couple
-  // of alternate scenarios one by one so switching presets later feels instant.
+  // Never compute anything on our own. On mount we only either (a) restore
+  // whatever the user last actually ran, from storage, or (b) leave the
+  // dashboard empty so the welcome guide shows instead. Either way we quietly
+  // warm a couple of scenarios in the background, one by one, purely so that
+  // if the user (or a cache hit) later needs them, they're already cached.
   useEffect(() => {
+    const last = readLastShown();
+    if (last && last.data && last.params) {
+      const key = keyOf(last.params);
+      cacheRef.current[key] = last.data;
+      lastKeyRef.current = key;
+      setParams(last.params);
+      setData(last.data);
+      setRunId(1);
+    }
+
     let cancelled = false;
     (async () => {
-      await run(DEFAULTS);
-      for (const preset of WARM_PRESETS) {
+      for (const preset of [DEFAULTS, ...WARM_PRESETS]) {
         if (cancelled) return;
         try {
           await fetchSolve(preset);
@@ -308,6 +345,8 @@ export default function Page() {
             {error && <div className="error-banner">{error}</div>}
 
             <StageTicker active={loading} done={justDone} />
+
+            {!results && !loading && <WelcomeGuide />}
 
             {results && (
               <>
